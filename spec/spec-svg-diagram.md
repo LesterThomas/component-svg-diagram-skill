@@ -229,3 +229,18 @@ For TMFC001:
 
 For all components: every component with a YAML renders without error, and
 the counts in the SVG match the YAML (checked by a script, tasks Phase 5).
+
+For charts, `verify.mjs --chart` also runs an independent audit
+(`audit-chart.mjs`) that shares no link logic with the renderer — only the
+SVG's `data-*` attributes. From the raw `helm template` output it checks:
+
+| Check | Level |
+| --- | --- |
+| every workload is drawn; every Service selects a workload | warn |
+| every exposed API is drawn, its `implementation` resolves to a workload, and that workload is linked to it | warn |
+| every declared dependent API is drawn and has ≥ 1 linked microservice (reports whether an env var names it or Canvas discovery wired it) | warn / info |
+| every env var naming an in-chart Service appears as an internal integration | warn |
+| every external env host is in `platform-apis.json`, drawn and linked | warn |
+| Services nothing refers to; microservices with no lines | info |
+
+Warnings are reported but only fail with `--strict`.

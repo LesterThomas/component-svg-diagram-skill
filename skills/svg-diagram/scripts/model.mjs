@@ -179,8 +179,8 @@ export function loadComponent(componentsDir, id, opts = {}) {
   return buildModel(doc, { ...opts, componentsDir, name: readMdName(dir, id) ?? undefined });
 }
 
-// Compile a Helm chart (`helm template`) and model the `kind: Component` it produces.
-export function loadChart(chartDir, { release = 'r1', set = [], values = [], componentsDir, ...opts } = {}) {
+// Compile a Helm chart with `helm template`; returns Chart.yaml and the rendered documents.
+export function helmTemplate(chartDir, { release = 'r1', set = [], values = [] } = {}) {
   const chart = yaml.load(fs.readFileSync(path.join(chartDir, 'Chart.yaml'), 'utf8'));
   const args = ['template', release, chartDir, ...set.flatMap((s) => ['--set', s]), ...values.flatMap((v) => ['-f', v])];
   let out;
@@ -190,7 +190,12 @@ export function loadChart(chartDir, { release = 'r1', set = [], values = [], com
     if (e.code === 'ENOENT') throw new Error('helm not found on PATH — install Helm 3 to render charts');
     throw new Error(`helm template failed: ${(e.stderr || e.message).trim()}`);
   }
-  const docs = yaml.loadAll(out).filter(Boolean);
+  return { chart, docs: yaml.loadAll(out).filter(Boolean) };
+}
+
+// Compile a Helm chart and model the `kind: Component` it produces.
+export function loadChart(chartDir, { release = 'r1', set = [], values = [], componentsDir, ...opts } = {}) {
+  const { chart, docs } = helmTemplate(chartDir, { release, set, values });
   const comp = docs.find((d) => d.kind === 'Component');
   if (!comp) throw new Error(`chart ${chart.name} renders no 'kind: Component' document`);
   const id = comp.spec?.componentMetadata?.id;

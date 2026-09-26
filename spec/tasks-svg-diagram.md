@@ -54,7 +54,7 @@ Spec: [spec-svg-diagram.md](spec-svg-diagram.md)
 - [x] 8.5 Platform endpoints → management-function dependent APIs via `platform-apis.json` (TMF638 canvas info, OpenTelemetry collector).
 - [x] 8.6 Route dependent-API lines level across the left column; keep left-column boxes off those rows (grow box if needed).
 - [x] 8.7 Second chart: `component-reference-implementations/ProductOrderCaptureAndValidation` (TMFC002). Found dependent APIs wired via Canvas info discovery, not env names → added the `discoversDependentAPIs` rule. Verified default, `component.dependentAPIs.enabled=false` and `permissionspec.enabled=false` (TMF669 PartyRole) variants.
-- [ ] 8.8 `verify.mjs --chart` compares the SVG with the same model it was drawn from; add an independent check (e.g. every `implementation` resolves, every declared dependent API has ≥1 link) and report gaps as warnings.
+- [x] 8.8 Independent audit `audit-chart.mjs` (no shared link logic with `buildInternals`), run by `verify.mjs --chart`; `--strict` fails on warnings. Mutation-tested: removing an exposed, dependent, platform or internal link each raises a warning; an unmapped `canvasinfo.host` raises the "no consumer for TMF620/TMF637" gap the model-only check missed.
 
 ## Backlog (post-v1)
 - [ ] Event diagram (published/subscribed events) per component.

@@ -1,11 +1,15 @@
 #!/usr/bin/env node
 // Check rendered SVGs against the YAML-derived model: element counts and API ids per side.
 // Usage: node verify.mjs [--components-dir components] [--diagrams-dir diagrams] [TMFCxxx ...]
-//        node verify.mjs --chart <dir> [--svg diagrams/reference/<chart>-architecture.svg] [--set k=v]...
+//        node verify.mjs --chart <dir> [--svg diagrams/reference/<chart>-architecture.svg] [--set k=v]... [--strict]
+// Chart mode runs two passes: the SVG against the model it was drawn from, then an independent
+// audit (audit-chart.mjs) that re-derives expected links from the raw helm output. Audit warnings
+// fail the run only with --strict.
 import fs from 'node:fs';
 import path from 'node:path';
 import { JSDOM } from 'jsdom';
-import { loadComponent, loadChart, listComponentIds } from './model.mjs';
+import { loadComponent, loadChart, helmTemplate, listComponentIds } from './model.mjs';
+import { auditChart } from './audit-chart.mjs';
 
 const args = process.argv.slice(2);
 const opt = (k, d) => { const i = args.indexOf(k); return i >= 0 ? args.splice(i, 2)[1] : d; };
@@ -15,6 +19,7 @@ const chartDir = opt('--chart', null);
 const svgPath = opt('--svg', null);
 const sets = [];
 for (let s; (s = opt('--set', null)); ) sets.push(s);
+const strict = args.includes('--strict') && !!args.splice(args.indexOf('--strict'), 1);
 if (chartDir) process.exit(verifyChart());
 const ids = args.length ? args : listComponentIds(componentsDir);
 
@@ -44,10 +49,14 @@ function verifyChart() {
   };
   const bad = Object.keys(want).filter((k) => got[k] !== want[k]);
   for (const k of Object.keys(want)) console.log(`${bad.includes(k) ? 'FAIL' : 'ok  '} ${k}: ${got[k] || '(none)'}${bad.includes(k) ? `  want ${want[k]}` : ''}`);
-  const unlinked = model.exposed.filter((a) => !links.some((l) => l.api === model.internals.apiKey('exposed', a)));
-  if (unlinked.length) console.log(`note: exposed APIs with no implementing microservice: ${unlinked.map((a) => a.id).join(', ')}`);
-  console.log(`${file}: ${bad.length ? 'FAILED' : 'passed'}`);
-  return bad.length ? 1 : 0;
+  const { docs } = helmTemplate(chartDir, { set: sets });
+  const findings = auditChart(docs, doc);
+  const warnings = findings.filter((f) => f.level === 'warn');
+  console.log(`independent audit (${warnings.length} warning${warnings.length === 1 ? '' : 's'}):`);
+  for (const f of findings) console.log(`  ${f.level === 'warn' ? 'WARN' : 'info'} [${f.check}] ${f.message}`);
+  const failed = bad.length || (strict && warnings.length);
+  console.log(`${file}: ${failed ? 'FAILED' : 'passed'}`);
+  return failed ? 1 : 0;
 }
 
 let failures = 0, checked = 0;

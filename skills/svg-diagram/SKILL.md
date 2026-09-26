@@ -43,8 +43,17 @@ component consistent and re-runnable.
 3. **Verify** the SVG matches the YAML (published components):
    ```bash
    node skills/svg-diagram/scripts/verify.mjs TMFC001     # or no ids = all
-   node skills/svg-diagram/scripts/verify.mjs --chart <dir> [--svg file] [--set k=v]   # charts: APIs, microservices, links
+   node skills/svg-diagram/scripts/verify.mjs --chart <dir> [--svg file] [--set k=v] [--strict]   # charts
    ```
+   For charts this runs two passes. The first checks the SVG against the model it
+   was drawn from. The second is an **independent audit** (`scripts/audit-chart.mjs`)
+   that re-derives what should be linked straight from the `helm template` output —
+   every exposed API's `implementation` resolves and is linked, every declared
+   dependent API has a consumer, every env var naming an in-chart Service is drawn
+   as an integration, every external host is a known platform API. Read its
+   `WARN` lines and tell the user about any gap rather than hiding it; `info`
+   lines (e.g. init jobs with no lines) are usually expected. `--strict` makes
+   warnings fail the run.
 4. **Look at it** when a browser is available (open the `.svg` directly; for
    many diagrams build `diagrams/index.html` with
    `node skills/svg-diagram/scripts/gallery.mjs`). Check that labels don't
