@@ -43,6 +43,7 @@ component consistent and re-runnable.
 3. **Verify** the SVG matches the YAML (published components):
    ```bash
    node skills/svg-diagram/scripts/verify.mjs TMFC001     # or no ids = all
+   node skills/svg-diagram/scripts/verify.mjs --chart <dir> [--svg file] [--set k=v]   # charts: APIs, microservices, links
    ```
 4. **Look at it** when a browser is available (open the `.svg` directly; for
    many diagrams build `diagrams/index.html` with
@@ -78,7 +79,12 @@ Mapping rules (details in `references/data-mapping.md`):
 
 - Dependent APIs ← `*Function.dependentAPIs`, left side; exposed ← `*Function.exposedAPIs`, right side. Grouped by function and **colour-coded: core = subtle green, management = subtle blue, security = subtle red**; within a group sorted by TMF number. **Bold = `required: true`**. An API can legitimately appear on both sides (TMF620 in TMFC001).
 - APIs without a TMF id (Prometheus `metrics`, MCP servers) are drawn as `Name (apiType)`. Terse implementation names (`productcatalogmanagement`) get the readable name for that TMF id from the published components.
-- eTOMs: every L2; an L3/L4 is shown only if no ancestor is listed. None → an italic placeholder row for a spec; implementations carry no eTOM/SID mapping, so their box is left compact and says so.
+- eTOMs: every L2; an L3/L4 is shown only if no ancestor is listed. None → an italic placeholder row for a spec.
+- **Implementations** (charts) have no eTOM/SID, so the box shows the chart's **microservices** instead — every Deployment/StatefulSet/DaemonSet/Job as a rounded rectangle (name, image:tag, ports; jobs dashed, databases with a small cylinder). Links are derived, not guessed:
+  - faint dashed line, function-coloured: exposed API `implementation` → Service → workload (Service selector matched to pod labels); dependent API whose `name` appears as a workload env value (e.g. `API_DEPENDENCY_NAME`). A declared dependent API that no env var names is wired by the Canvas at runtime, so it's linked to the microservice(s) that call the Canvas info service (TMF638, `CANVAS_INFO_HOST_PORT`) — the tooltip says "discovered at runtime via the Canvas info service".
+  - grey arrow = internal integration: a workload env value names another in-chart Service (`MONGODB_HOST=r1-mongodb`, `http://r1-x:8080/...`).
+  - hosts outside the chart that are known ODA Canvas / platform endpoints (`scripts/platform-apis.json`: `info.canvas.svc.cluster.local` = TMF638 Service Inventory, the OpenTelemetry collector = OpenTelemetry (OTLP)) become **management-function dependent APIs** on the left, linked to the microservices whose env vars use them. Unknown external hosts are listed in a "Platform services used" note — if the user tells you what one is, add it to `platform-apis.json` rather than hard-coding it.
+  If the user expects a link that isn't drawn, the chart doesn't declare it in a way the model can see (e.g. a job that calls an API via a hard-coded URL) — say so rather than adding it by hand.
 - SIDs: most specific ABE/BE name, 3-column cylinder grid; full path in the tooltip.
 - Hover tooltips (`<title>`) carry API versions/resources and full eTOM/SID ids.
 

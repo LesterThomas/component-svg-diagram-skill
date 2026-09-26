@@ -1,6 +1,6 @@
 # Spec: `svg-diagram` skill — ODA Component architecture diagrams as SVG
 
-Status: draft v0.2 · 2026-09-26 (v0.2: Helm-chart input, function colour coding)
+Status: draft v0.3 · 2026-09-26 (v0.2: Helm-chart input, function colour coding; v0.3: microservice internals)
 
 ## 1. Purpose
 
@@ -59,10 +59,37 @@ published `component.yaml`, with these differences:
 - `managementFunction`/`securityFunction` APIs are shown by default (`--include none` hides them).
 - APIs without a TMF id (`metrics`/prometheus, MCP servers) are kept, labelled `Name (apiType)`.
 - Terse names (`productcatalogmanagement`) take the readable name for that TMF id from the published components.
-- No eTOM/SID → compact box noting the implementation has no eTOM/SID mapping.
+- No eTOM/SID → the box shows the chart's **microservices** instead (§3.2).
 - Values-gated APIs (`if .Values…`) follow the chosen values; the note under the box records the exact `helm template` arguments.
 
 Output: `diagrams/reference/{chart}-architecture.svg`.
+
+### 3.2 Microservice internals (implementations)
+
+Each workload (`Deployment`, `StatefulSet`, `DaemonSet`, `Job`, `CronJob`) in
+the compiled chart is drawn inside the component box as a **rounded
+rectangle** with its name (release prefix removed), image:tag and ports.
+Jobs are dashed; database images (mongo, postgres, mysql, redis…) carry a
+small cylinder mark.
+
+| Link | Style | Rule |
+| --- | --- | --- |
+| microservice → exposed API | faint dashed, function colour | API `implementation` names a Service whose selector matches the workload's pod labels |
+| dependent API → microservice | faint dashed, function colour | a workload env value equals the dependent API `name`; failing that, the workloads that use the Canvas info service (TMF638), which resolves dependent-API URLs at runtime |
+| microservice → microservice | light grey arrow | a workload env value is/contains (URL, host:port) another in-chart Service name |
+
+Links come from what the chart declares (Service selectors, `implementation`, env vars) plus one ODA convention: dependent APIs are discovered through the Canvas info service. Nothing is inferred from microservice names.
+
+Hosts outside the chart are matched against `scripts/platform-apis.json`,
+a table of known ODA Canvas / platform endpoints. A match becomes a
+**dependent API in the management function** (blue, left side) with a
+faint link to each microservice that uses it — e.g.
+`info.canvas.svc.cluster.local` → TMF638 Service Inventory Management,
+`observability-opentelemetry-collector.monitoring.svc.cluster.local` →
+OpenTelemetry (OTLP). Unmatched hosts are listed in a "Platform services
+used" note so they can be added to the table.
+Layout: API-linked workloads in a right-hand column aligned with their
+APIs; others in a left-hand column beside what they integrate with.
 
 ## 4. Data mapping
 

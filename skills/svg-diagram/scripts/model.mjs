@@ -3,6 +3,13 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import yaml from 'js-yaml';
+import { fileURLToPath } from 'node:url';
+
+// Known ODA Canvas / platform endpoints (host → API identity); see platform-apis.json.
+const PLATFORM_APIS = JSON.parse(fs.readFileSync(
+  path.join(path.dirname(fileURLToPath(import.meta.url)), 'platform-apis.json'), 'utf8')).apis;
+const platformApiFor = (key, by = 'host') => PLATFORM_APIS.find((p) => (by === 'name'
+  ? p.name === key : p.hosts.some((h) => h.toLowerCase() === key.toLowerCase())));
 
 const API_ID = /^TMF\d+$/;
 // Template placeholders left in published YAML (e.g. managementFunction.dependentAPIs[].id: dependentAPI_id)
@@ -60,6 +67,7 @@ export function apiNameCatalog(componentsDir) {
 }
 
 function apiLabel(api, catalog) {
+  if (api.label) return api.label;
   const hasId = API_ID.test(String(api.id ?? ''));
   let name = String(api.name ?? '');
   if (hasId && !name.includes('-') && catalog.has(api.id)) name = catalog.get(api.id);
@@ -100,6 +108,8 @@ function collectApis(spec, key, include, catalog) {
         label,
         required: !!api.required,
         fn,
+        name,
+        implementation: api.implementation ? String(api.implementation) : null,
         tooltip: `[${fn}] ${apiTooltip(api, label)}`,
       });
     }
@@ -186,17 +196,153 @@ export function loadChart(chartDir, { release = 'r1', set = [], values = [], com
   const id = comp.spec?.componentMetadata?.id;
   // Borrow the published spec's human name when this implements a known TMFC id.
   const specName = id && componentsDir ? readMdName(path.join(componentsDir, id), id) : null;
-  return {
-    chart,
-    model: buildModel(comp, {
-      ...opts,
-      componentsDir,
-      kind: 'implementation',
-      name: specName ?? undefined,
-      source: `Helm chart ${chart.name} v${chart.version}`,
-      sourceDetail: `helm template ${release} ${[...set.map((x) => `--set ${x}`), ...values.map((v) => `-f ${v}`)].join(' ') || '(default values)'}`,
-    }),
+  const model = buildModel(comp, {
+    ...opts,
+    componentsDir,
+    kind: 'implementation',
+    name: specName ?? undefined,
+    source: `Helm chart ${chart.name} v${chart.version}`,
+    sourceDetail: `helm template ${release} ${[...set.map((x) => `--set ${x}`), ...values.map((v) => `-f ${v}`)].join(' ') || '(default values)'}`,
+  });
+  model.internals = buildInternals(docs, release, model, apiNameCatalog(componentsDir));
+  return { chart, model };
+}
+
+// ---- implementation internals: microservices and how they connect ------------------------
+
+const WORKLOAD_KINDS = ['Deployment', 'StatefulSet', 'DaemonSet', 'Job', 'CronJob'];
+const DATABASE_IMAGE = /^(mongo|postgres|mysql|mariadb|redis|cassandra|couchdb|elasticsearch|opensearch)\b/;
+
+const podSpecOf = (w) =>
+  w.kind === 'CronJob' ? w.spec?.jobTemplate?.spec?.template : w.spec?.template;
+
+// Hostnames an env value refers to: a bare name, host:port, or a URL.
+function hostsIn(value) {
+  const v = String(value ?? '').trim();
+  if (!v) return [];
+  const url = v.match(/^[a-z][a-z0-9+.-]*:\/\/([^/:?#\s]+)/i);
+  if (url) return [url[1]];
+  const hp = v.match(/^([a-z0-9.-]+)(?::\d+)?$/i);
+  return hp ? [hp[1]] : [];
+}
+
+// Find or add the dependent API for a platform endpoint, keeping function/number order.
+function platformDependent(model, p, catalog, apiKey) {
+  const id = p.id ?? p.name;
+  let api = model.dependent.find((a) => a.fn === p.function && a.id === id);
+  if (api) { api.usedBy ??= new Set(); return api; }
+  const label = apiLabel({ id: p.id ?? '', name: p.name, apiType: p.apiType, label: p.label }, catalog);
+  api = {
+    id, label, required: false, fn: p.function, name: p.name, implementation: null, platform: true, usedBy: new Set(),
+    tooltip: `[${p.function}] ${label}\nplatform dependency (not declared in the Component)${p.description ? `\n${p.description}` : ''}`,
   };
+  model.dependent.push(api);
+  const fnRank = (a) => FUNCTIONS.indexOf(a.fn);
+  model.dependent.sort((a, b) => fnRank(a) - fnRank(b) || numId(a.id) - numId(b.id) || a.label.localeCompare(b.label));
+  return api;
+}
+
+// Models the chart's workloads (microservices) and three kinds of link:
+//   exposed:  exposed API.implementation → Service → workload (Service selector ⊆ pod labels)
+//   dependent: a workload env value equals a dependent API's name (e.g. API_DEPENDENCY_NAME)
+//   internal: a workload env value names another in-chart Service (MONGODB_HOST=r1-mongodb)
+export function buildInternals(docs, release, model, catalog = new Map()) {
+  const strip = (n) => String(n).replace(new RegExp(`^${release}-`), '');
+  const workloads = docs.filter((d) => WORKLOAD_KINDS.includes(d.kind)).map((w) => {
+    const pod = podSpecOf(w) ?? {};
+    const containers = pod.spec?.containers ?? [];
+    const images = containers.map((c) => String(c.image ?? ''));
+    const imageShort = images.map((i) => i.split('/').pop());
+    const env = containers.flatMap((c) => (c.env ?? []).filter((e) => e.value != null).map((e) => ({ name: e.name, value: String(e.value) })));
+    return {
+      id: w.metadata.name,
+      name: strip(w.metadata.name),
+      kind: w.kind,
+      role: w.kind === 'Job' || w.kind === 'CronJob' ? 'job'
+        : imageShort.some((i) => DATABASE_IMAGE.test(i)) ? 'database' : 'service',
+      images: imageShort,
+      ports: containers.flatMap((c) => (c.ports ?? []).map((p) => p.containerPort)).filter(Boolean),
+      labels: pod.metadata?.labels ?? {},
+      env,
+      services: [],
+    };
+  });
+
+  const svcToWorkload = new Map();
+  for (const s of docs.filter((d) => d.kind === 'Service')) {
+    const sel = s.spec?.selector ?? {};
+    if (!Object.keys(sel).length) continue;
+    const w = workloads.find((wl) => Object.entries(sel).every(([k, v]) => wl.labels[k] === v));
+    if (!w) continue;
+    svcToWorkload.set(s.metadata.name, w);
+    w.services.push({ name: s.metadata.name, ports: (s.spec?.ports ?? []).map((p) => p.port) });
+  }
+
+  const links = [];
+  const apiKey = (side, api) => `${side}:${api.fn}:${api.id}`;
+  for (const api of model.exposed) {
+    const w = api.implementation && (svcToWorkload.get(api.implementation) ?? workloads.find((x) => x.id === api.implementation));
+    if (w) links.push({ type: 'exposed', from: w.id, api: apiKey('exposed', api), fn: api.fn });
+  }
+  for (const w of workloads) {
+    for (const e of w.env) {
+      for (const api of model.dependent) {
+        if (api.name && e.value.toLowerCase() === api.name.toLowerCase()) {
+          links.push({ type: 'dependent', from: w.id, api: apiKey('dependent', api), fn: api.fn, via: e.name });
+        }
+      }
+    }
+  }
+  const internal = new Map();
+  const external = new Set();
+  for (const w of workloads) {
+    for (const e of w.env) {
+      for (const host of hostsIn(e.value)) {
+        const target = svcToWorkload.get(host) ?? svcToWorkload.get(host.split('.')[0]);
+        if (target && target.id !== w.id) {
+          const k = `${w.id}>${target.id}`;
+          if (!internal.has(k)) internal.set(k, { type: 'internal', from: w.id, to: target.id, via: [] });
+          internal.get(k).via.push(`${e.name}=${e.value}`);
+        } else if (!target && host.includes('.')) {
+          const p = platformApiFor(host);
+          if (p && model.functions.includes(p.function)) {
+            // A platform endpoint the Component doesn't declare: surface it as a dependent API.
+            const api = platformDependent(model, p, catalog, apiKey);
+            const k = apiKey('dependent', api);
+            if (!links.some((l) => l.api === k && l.from === w.id)) {
+              links.push({ type: 'dependent', from: w.id, api: k, fn: api.fn, via: e.name });
+            }
+            api.usedBy.add(`${w.name} (${e.name}=${e.value})`);
+          } else if (!p) {
+            external.add(host);
+          }
+        }
+      }
+    }
+  }
+  links.push(...internal.values());
+
+  // Declared dependent APIs that no env var names are wired by the Canvas at runtime: the
+  // microservice asks the Canvas info service (a platform API with discoversDependentAPIs) for
+  // their URLs. Link them to every microservice that uses such a discovery service.
+  const discoveryKeys = new Set(model.dependent.filter((a) => a.platform && platformApiFor(a.name, 'name')?.discoversDependentAPIs)
+    .map((a) => apiKey('dependent', a)));
+  const discoverers = [...new Set(links.filter((l) => discoveryKeys.has(l.api)).map((l) => l.from))];
+  for (const api of model.dependent.filter((a) => !a.platform)) {
+    const k = apiKey('dependent', api);
+    if (links.some((l) => l.api === k)) continue;
+    for (const from of discoverers) {
+      links.push({ type: 'dependent', from, api: k, fn: api.fn, via: 'discovered at runtime via the Canvas info service', discovered: true });
+    }
+  }
+  for (const api of model.dependent) {
+    if (api.usedBy) { api.tooltip += `\ninferred from env: ${[...api.usedBy].join('; ')}`; delete api.usedBy; }
+  }
+
+  // Keep chart order stable but deterministic: services, then databases, then jobs.
+  const rank = { service: 0, database: 1, job: 2 };
+  workloads.sort((a, b) => rank[a.role] - rank[b.role] || a.name.localeCompare(b.name));
+  return { workloads, links, external: [...external].sort(), apiKey };
 }
 
 export function listComponentIds(componentsDir) {

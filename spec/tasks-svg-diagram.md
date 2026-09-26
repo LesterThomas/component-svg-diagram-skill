@@ -44,7 +44,17 @@ Spec: [spec-svg-diagram.md](spec-svg-diagram.md)
 - [x] 7.3 Colour-code APIs by function (core green, management blue, security red); group gaps; legend colour key.
 - [x] 7.4 Compact box and legend when no eTOM/SID; two-line source note with helm args.
 - [x] 7.5 Render `diagrams/reference/productcatalog-architecture.svg` (+ all-options variant); re-render and re-verify all 26 specs.
-- [ ] 7.6 Extend `verify.mjs` to cover charts and the `data-function` grouping.
+- [x] 7.6 Extend `verify.mjs` to cover charts (`--chart`): APIs per function, microservices, API and internal links.
+
+## Phase 8 — Microservice internals for implementations
+- [x] 8.1 `buildInternals()`: workloads, Service→workload by selector, exposed/dependent/internal links from `implementation` and env vars.
+- [x] 8.2 Rounded-rect microservices in two columns (API-linked right, aligned to their APIs; others left); jobs dashed, databases marked.
+- [x] 8.3 Faint function-coloured dashed links to exposed/dependent APIs; grey arrows for internal integrations; platform-services note.
+- [x] 8.4 Legend: Microservice, Internal integration; wrap colour key to a second row when needed.
+- [x] 8.5 Platform endpoints → management-function dependent APIs via `platform-apis.json` (TMF638 canvas info, OpenTelemetry collector).
+- [x] 8.6 Route dependent-API lines level across the left column; keep left-column boxes off those rows (grow box if needed).
+- [x] 8.7 Second chart: `component-reference-implementations/ProductOrderCaptureAndValidation` (TMFC002). Found dependent APIs wired via Canvas info discovery, not env names → added the `discoversDependentAPIs` rule. Verified default, `component.dependentAPIs.enabled=false` and `permissionspec.enabled=false` (TMF669 PartyRole) variants.
+- [ ] 8.8 `verify.mjs --chart` compares the SVG with the same model it was drawn from; add an independent check (e.g. every `implementation` resolves, every declared dependent API has ≥1 link) and report gaps as warnings.
 
 ## Backlog (post-v1)
 - [ ] Event diagram (published/subscribed events) per component.
