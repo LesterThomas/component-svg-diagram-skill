@@ -1,6 +1,6 @@
 # Spec: `svg-diagram` skill — ODA Component architecture diagrams as SVG
 
-Status: draft v0.1 · 2026-09-25
+Status: draft v0.2 · 2026-09-26 (v0.2: Helm-chart input, function colour coding)
 
 ## 1. Purpose
 
@@ -49,6 +49,21 @@ Out of scope (v1, candidates for later — see tasks Phase 6)
 Components with no `component.yaml` (TMFC013/015/032/033/051) are skipped
 with a clear message, never an error in batch mode.
 
+### 3.1 Helm chart input (reference implementations)
+
+A chart directory (e.g. `component-reference-implementations/ProductCatalog`)
+is compiled with `helm template r1 <dir> [--set …] [-f …]`; the one
+`kind: Component` document in the output is modelled exactly like a
+published `component.yaml`, with these differences:
+
+- `managementFunction`/`securityFunction` APIs are shown by default (`--include none` hides them).
+- APIs without a TMF id (`metrics`/prometheus, MCP servers) are kept, labelled `Name (apiType)`.
+- Terse names (`productcatalogmanagement`) take the readable name for that TMF id from the published components.
+- No eTOM/SID → compact box noting the implementation has no eTOM/SID mapping.
+- Values-gated APIs (`if .Values…`) follow the chosen values; the note under the box records the exact `helm template` arguments.
+
+Output: `diagrams/reference/{chart}-architecture.svg`.
+
 ## 4. Data mapping
 
 YAML paths are relative to `spec:`.
@@ -80,6 +95,11 @@ Rules:
 - The same API may appear on both sides (TMF620 in TMFC001) — draw it on both.
 - **`required: true`** → label rendered bold; optional → regular. The legend
   explains this.
+- **Function colour coding**: connector, glyph and a label pill are tinted by
+  function — core subtle green, management subtle blue, security subtle red.
+  Each side is grouped core → management → security with a small gap between
+  groups. The legend adds a colour key when more than one function is shown
+  (always for implementations).
 - Every connector group carries a `<title>` tooltip listing version and
   resources (e.g. `catalog: GET, GET /id, POST…`).
 

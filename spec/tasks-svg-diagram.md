@@ -38,6 +38,14 @@ Spec: [spec-svg-diagram.md](spec-svg-diagram.md)
 - [ ] 6.3 Iterate on feedback; optimise the description for triggering.
 - [ ] 6.4 Package `.skill`.
 
+## Phase 7 — Reference implementations (Helm charts) & function colours
+- [x] 7.1 `loadChart()`: `helm template` → `kind: Component` → model; `--chart`, `--set`, `--values`, `--release`.
+- [x] 7.2 Keep id-less APIs (metrics, MCP); placeholder-name filter; readable names from the published catalog.
+- [x] 7.3 Colour-code APIs by function (core green, management blue, security red); group gaps; legend colour key.
+- [x] 7.4 Compact box and legend when no eTOM/SID; two-line source note with helm args.
+- [x] 7.5 Render `diagrams/reference/productcatalog-architecture.svg` (+ all-options variant); re-render and re-verify all 26 specs.
+- [ ] 7.6 Extend `verify.mjs` to cover charts and the `data-function` grouping.
+
 ## Backlog (post-v1)
 - [ ] Event diagram (published/subscribed events) per component.
 - [ ] Multi-component wiring diagram (exposed ↔ dependent matches).

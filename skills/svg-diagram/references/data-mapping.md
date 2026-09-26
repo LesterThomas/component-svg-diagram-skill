@@ -13,8 +13,11 @@ Paths are relative to `spec:`. Implemented in `scripts/model.mjs`.
 | Right | `coreFunction.exposedAPIs[]` (+ same) | lollipop `──○` |
 
 - Label: `{id} {name without -api, hyphens→spaces, Title Case}` — `party-role-management-api` → `TMF669 Party Role Management`.
-- Drop entries whose id isn't `TMF<digits>` (template placeholders in management/security blocks).
-- De-dup by id per side (required = OR of duplicates); sort by TMF number.
+- Names without hyphens (implementations: `productcatalogmanagement`) → the hyphenated name for that TMF id harvested from `components/*/component.yaml`.
+- No TMF id (`metrics`, MCP) → `{Name} ({apiType})`, e.g. `Metrics (Prometheus)`.
+- Drop entries whose *name* is a template placeholder (`dependentAPI_name`); a placeholder *id* (`exposedAPI_id`) just means "no TMF id".
+- Group by function (core, management, security); de-dup by id within function and side (required = OR of duplicates); sort by TMF number, id-less last.
+- Colour by function (stroke / fill): core `#4c9a52`/`#e8f5e9`, management `#4a7fbf`/`#e7eff9`, security `#c0504d`/`#fbeaea` — `FN_COLOR` in `layout.mjs`.
 - `required: true` → bold label.
 - Tooltip: label + spec version, `required`, one line per resource with its operations.
 
@@ -35,3 +38,9 @@ Entry: `Domain|ABE[|Sub_ABE or BE]|version`.
 - YAML vs PDF version numbers and content differ (see `components/AGENTS.md`).
 - Management-function blocks contain template placeholders (`dependentAPI_id`) — filtered, not drawn.
 - `status` may be `Pre-production` (TMFC011) rather than `specified` — shown in `<desc>` only.
+
+## Helm charts (reference implementations)
+`render.mjs --chart DIR` runs `helm template r1 DIR [--set …] [-f …]` and models the single `kind: Component` document.
+- Title name borrowed from `components/{id}/{id}.md` when the chart implements a published TMFC id; subtitle "Reference implementation".
+- `--include` defaults to management + security. The note under the box shows chart name/version and the exact `helm template` arguments.
+- No eTOM/SID in implementations → compact box; eTOM/SID omitted from the legend.
